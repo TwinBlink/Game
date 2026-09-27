@@ -391,7 +391,7 @@
 
     <label class="field">
       <span class="lbl">Purchase price</span>
-      <span class="money"><span>RM</span><input id="price" inputmode="decimal" autocomplete="off" enterkeyhint="done"></span>
+      <span class="money"><span>RM</span><input id="price" name="purchase-price" inputmode="decimal" autocomplete="off" enterkeyhint="done"></span>
     </label>
 
     <div class="pair">
@@ -399,26 +399,26 @@
         <span class="lbl">Persons</span>
         <span class="stepper">
           <button type="button" id="personsMinus" aria-label="Fewer persons">−</button>
-          <input id="persons" inputmode="numeric" autocomplete="off" aria-label="Number of persons">
+          <input id="persons" name="persons" inputmode="numeric" autocomplete="off" aria-label="Number of persons">
           <button type="button" id="personsPlus" aria-label="More persons">+</button>
         </span>
       </label>
       <label class="field">
         <span class="lbl">Discount</span>
-        <select id="discount" aria-label="Discount on professional fee"></select>
+        <select id="discount" name="discount" autocomplete="off" aria-label="Discount on professional fee"></select>
       </label>
     </div>
     <p class="note" id="discountNote">On the sale and purchase fee.</p>
 
     <label class="switch-row">SST 8% on legal fees
-      <input type="checkbox" id="sst" aria-label="Add SST at 8 percent on legal fees">
+      <input type="checkbox" id="sst" name="sst" autocomplete="off" aria-label="Add SST at 8 percent on legal fees">
       <span class="track"></span>
     </label>
 
     <div id="buyerBlock" hidden>
       <label class="field">
         <span class="lbl">Buyer</span>
-        <select id="buyer">
+        <select id="buyer" name="buyer" autocomplete="off">
           <option value="citizen">Malaysian citizen</option>
           <option value="pr">Permanent resident</option>
           <option value="foreign-res">Foreigner, residential</option>
@@ -426,18 +426,18 @@
         </select>
       </label>
       <label class="check">
-        <input type="checkbox" id="firstHome">
+        <input type="checkbox" id="firstHome" name="first-home" autocomplete="off">
         <span>First home for a Malaysian citizen, RM500,000 or below. Transfer and loan stamp duty are nil.</span>
       </label>
       <p class="note warn" id="homeNote" hidden></p>
       <label class="switch-row">Loan
-        <input type="checkbox" id="loanOn" aria-label="Include loan">
+        <input type="checkbox" id="loanOn" name="loan" autocomplete="off">
         <span class="track"></span>
       </label>
       <div id="loanBox" hidden>
         <label class="field">
           <span class="lbl">Loan amount</span>
-          <span class="money"><span>RM</span><input id="loanAmount" inputmode="decimal" autocomplete="off" enterkeyhint="done"></span>
+          <span class="money"><span>RM</span><input id="loanAmount" name="loan-amount" inputmode="decimal" autocomplete="off" enterkeyhint="done"></span>
         </label>
         <p class="note" id="loanHint"></p>
       </div>
@@ -445,11 +445,11 @@
 
     <label class="field">
       <span class="lbl">Name</span>
-      <span class="plain"><input id="clientName" autocomplete="name" enterkeyhint="next" placeholder="Optional"></span>
+      <span class="plain"><input id="clientName" name="client-name" autocomplete="off" enterkeyhint="next" placeholder="Optional"></span>
     </label>
     <label class="field">
       <span class="lbl">Property</span>
-      <span class="area"><textarea id="property" rows="2" enterkeyhint="done" placeholder="Optional"></textarea></span>
+      <span class="area"><textarea id="property" name="property" autocomplete="off" rows="2" enterkeyhint="done" placeholder="Optional"></textarea></span>
     </label>
   </section>
 
@@ -633,6 +633,7 @@
   function setIfIdle(el, text) {
     if (document.activeElement === el) return;
     if (el.value !== text) el.value = text;
+    if (el.defaultValue !== el.value) el.defaultValue = el.value;
   }
 
   function esc(s) {
@@ -650,7 +651,7 @@
           '<div class="line-name"><span class="num">' + (i + 1) + '</span>' + esc(row.label) + '</div>' +
           '<div class="line-row">' +
             '<label class="box"><span>RM</span>' +
-              '<input data-id="' + row.id + '" inputmode="decimal" autocomplete="off" aria-label="' + esc(row.label) + '" placeholder="—">' +
+              '<input data-id="' + row.id + '" name="' + row.id + '" inputmode="decimal" autocomplete="off" aria-label="' + esc(row.label) + '" placeholder="—">' +
             '</label>' +
             '<div class="inc" data-inc="' + row.id + '"></div>' +
           '</div>' +
@@ -662,6 +663,7 @@
       if (input && document.activeElement !== input) {
         const next = row.excl == null ? "" : formatInput(row.excl);
         if (input.value !== next) input.value = next;
+        if (input.defaultValue !== input.value) input.defaultValue = input.value;
       }
       const inc = container.querySelector('[data-inc="' + row.id + '"]');
       if (!inc) return;
@@ -716,8 +718,261 @@
     $("holdNote").textContent = hold;
   }
 
+  const SNAP_KEY = "typ-quotation";
+  const HANDOFF_KEY = "typ-quotation-handoff";
+  let lastSnap = null;
+  let persistReady = false;
+  let human = false;
+  let guardUntil = 0;
+  let guardTimer = 0;
+
+  function snapshot() {
+    return {
+      party: party(),
+      price: price.value,
+      persons: persons.value,
+      discount: discount.value,
+      sst: sst.checked,
+      buyer: buyer.value,
+      firstHome: firstHome.checked,
+      loanOn: loanOn.checked,
+      loanAmount: loanAmount.value,
+      loanTouched: loanTouched,
+      clientName: clientName.value,
+      property: property.value,
+      overrides: Object.assign({}, overrides)
+    };
+  }
+
+  function persistLast() {
+    if (!lastSnap) return;
+    try { sessionStorage.setItem(SNAP_KEY, JSON.stringify(lastSnap)); } catch (err) {}
+  }
+
+  function clearHandoff() {
+    try { sessionStorage.removeItem(HANDOFF_KEY); } catch (err) {}
+  }
+
+  function clearStored() {
+    lastSnap = null;
+    guardUntil = 0;
+    if (guardTimer) {
+      clearTimeout(guardTimer);
+      guardTimer = 0;
+    }
+    try { sessionStorage.removeItem(SNAP_KEY); } catch (err) {}
+    clearHandoff();
+  }
+
+  function handoffPending() {
+    try {
+      const t = Number(sessionStorage.getItem(HANDOFF_KEY) || 0);
+      return t > 0 && Date.now() - t < 12 * 60 * 60 * 1000;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function readSnapshot() {
+    try {
+      const raw = sessionStorage.getItem(SNAP_KEY);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data && typeof data === "object") return data;
+      }
+    } catch (err) {}
+    return lastSnap;
+  }
+
+  function pin(el) {
+    if (!el) return;
+    if (el.type === "checkbox" || el.type === "radio") {
+      el.defaultChecked = el.checked;
+      return;
+    }
+    if (el.tagName === "SELECT") {
+      for (let i = 0; i < el.options.length; i++) el.options[i].defaultSelected = el.options[i].selected;
+      return;
+    }
+    el.defaultValue = el.value;
+  }
+
+  function pinForm() {
+    [price, persons, loanAmount, clientName, property, discount, buyer, sst, firstHome, loanOn].forEach(pin);
+    document.querySelectorAll('input[name="party"]').forEach(pin);
+    document.querySelectorAll("input[data-id]").forEach(pin);
+  }
+
+  function payloadFrom(data) {
+    const who = data.party === "purchaser" ? "purchaser" : "vendor";
+    const personsRaw = parseMoney(data.persons);
+    const input = {
+      party: who,
+      price: parseMoney(data.price),
+      persons: personsRaw == null ? 1 : personsRaw,
+      discountPct: Number(data.discount) || 0,
+      sst: !!data.sst,
+      buyer: data.buyer || "citizen",
+      firstHome: !!data.firstHome && (data.buyer || "citizen") === "citizen",
+      loanOn: who === "purchaser" && !!data.loanOn,
+      overrides: data.overrides && typeof data.overrides === "object" ? data.overrides : {}
+    };
+    if (input.loanOn && data.loanTouched) {
+      const n = parseMoney(data.loanAmount);
+      input.loanAmount = n == null ? 0 : n;
+    }
+    return input;
+  }
+
+  function setSelect(el, value) {
+    const v = String(value == null ? "" : value);
+    for (let i = 0; i < el.options.length; i++) {
+      if (el.options[i].value === v) {
+        el.value = v;
+        return;
+      }
+    }
+  }
+
+  // iPhone opens the PDF in this tab. Back keeps the total and clears the inputs.
+  function grandTextFor(data) {
+    return formatRM(FeeCalc.quote(payloadFrom(data)).grandInc);
+  }
+
+  function grandMismatch() {
+    return $("grand").textContent !== formatRM(FeeCalc.quote(payload()).grandInc);
+  }
+
+  function looksLikeFreshForm() {
+    return price.value.trim() === ""
+      && clientName.value.trim() === ""
+      && property.value.trim() === ""
+      && loanAmount.value.trim() === ""
+      && !sst.checked
+      && !firstHome.checked
+      && !loanOn.checked
+      && party() === "vendor"
+      && (discount.value === "0" || discount.value === "")
+      && (persons.value.trim() === "" || persons.value === "1")
+      && !grandMismatch();
+  }
+
+  function shouldRestore(data) {
+    if (human || !data || !snapDiffers(data)) return false;
+    if ($("grand").textContent === grandTextFor(data) && grandMismatch()) return true;
+    if (handoffPending() && looksLikeFreshForm()) return true;
+    return false;
+  }
+
+  function snapDiffers(data) {
+    if (!data) return false;
+    const who = data.party === "purchaser" ? "purchaser" : "vendor";
+    if (party() !== who) return true;
+    const priceNow = parseMoney(price.value);
+    const priceThen = parseMoney(data.price);
+    if (priceNow == null ? priceThen != null : priceThen == null || Math.abs(priceNow - priceThen) > 0.001) return true;
+    const personsThen = data.persons == null || String(data.persons) === "" ? "1" : String(data.persons);
+    if (persons.value !== personsThen) return true;
+    if (discount.value !== String(data.discount == null ? "0" : data.discount)) return true;
+    if (sst.checked !== !!data.sst) return true;
+    if (buyer.value !== String(data.buyer || "citizen")) return true;
+    if (firstHome.checked !== !!data.firstHome) return true;
+    if (loanOn.checked !== !!data.loanOn) return true;
+    const loanNow = parseMoney(loanAmount.value);
+    const loanThen = parseMoney(data.loanAmount);
+    if (loanNow == null ? loanThen != null : loanThen == null || Math.abs(loanNow - loanThen) > 0.001) return true;
+    if (!!loanTouched !== !!data.loanTouched) return true;
+    if (clientName.value !== (data.clientName == null ? "" : String(data.clientName))) return true;
+    if (property.value !== (data.property == null ? "" : String(data.property))) return true;
+    const q = FeeCalc.quote(payloadFrom(data));
+    const rows = q.fees.concat(q.disb);
+    for (let i = 0; i < rows.length; i++) {
+      const input = document.querySelector('input[data-id="' + rows[i].id + '"]');
+      if (!input) return true;
+      if (rows[i].excl == null) {
+        if (input.value.trim() !== "") return true;
+      } else {
+        const shown = parseMoney(input.value);
+        if (shown == null || Math.abs(shown - rows[i].excl) > 0.001) return true;
+      }
+    }
+    return false;
+  }
+
+  function applySnapshot(data) {
+    Object.keys(overrides).forEach((key) => delete overrides[key]);
+    const ov = data.overrides && typeof data.overrides === "object" ? data.overrides : {};
+    Object.keys(ov).forEach((key) => {
+      const n = Number(ov[key]);
+      if (isFinite(n)) overrides[key] = n;
+    });
+    loanTouched = !!data.loanTouched;
+    const who = data.party === "purchaser" ? "purchaser" : "vendor";
+    const partyEl = document.querySelector('input[name="party"][value="' + who + '"]');
+    if (partyEl) partyEl.checked = true;
+    price.value = data.price == null ? "" : String(data.price);
+    persons.value = data.persons == null || String(data.persons) === "" ? "1" : String(data.persons);
+    setSelect(discount, data.discount == null ? "0" : data.discount);
+    sst.checked = !!data.sst;
+    setSelect(buyer, data.buyer || "citizen");
+    firstHome.checked = !!data.firstHome && buyer.value === "citizen";
+    loanOn.checked = !!data.loanOn;
+    loanAmount.value = data.loanAmount == null ? "" : String(data.loanAmount);
+    clientName.value = data.clientName == null ? "" : String(data.clientName);
+    property.value = data.property == null ? "" : String(data.property);
+    recalc();
+  }
+
+  function remember() {
+    pinForm();
+    lastSnap = snapshot();
+    persistLast();
+  }
+
+  function recoverIfNeeded() {
+    const data = readSnapshot();
+    if (!shouldRestore(data)) return false;
+    applySnapshot(data);
+    return true;
+  }
+
+  function restoreSnapshot() {
+    recoverIfNeeded();
+  }
+
+  function armGuard() {
+    guardUntil = Date.now() + 3000;
+    if (guardTimer) return;
+    const tick = () => {
+      recoverIfNeeded();
+      if (Date.now() >= guardUntil) {
+        guardTimer = 0;
+        return;
+      }
+      guardTimer = setTimeout(tick, 100);
+    };
+    guardTimer = setTimeout(tick, 0);
+  }
+
+  function beginHandoff() {
+    human = false;
+    recoverIfNeeded();
+    human = false;
+    remember();
+    try { sessionStorage.setItem(HANDOFF_KEY, String(Date.now())); } catch (err) {}
+    armGuard();
+  }
+
+  function watchReturn() {
+    human = false;
+    armGuard();
+  }
+
   function recalc() {
+    if (persistReady && recoverIfNeeded()) return;
+    human = false;
     paint(FeeCalc.quote(payload()));
+    if (persistReady) remember();
   }
 
   function currentModel() {
@@ -742,16 +997,23 @@
     return new File([blob], fileName(), { type: "application/pdf" });
   }
 
+  function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent)
+      || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  }
+
   function downloadNow(file) {
     const url = URL.createObjectURL(file);
     const a = document.createElement("a");
     a.href = url;
-    a.download = file.name;
     a.rel = "noopener";
+    // iPhone replaces this page when download is set. A new tab leaves the quotation in place.
+    if (isIOS()) a.target = "_blank";
+    else a.download = file.name;
     document.body.appendChild(a);
     a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 20000);
+    setTimeout(() => a.remove(), 1000);
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
   }
 
   function showToast(msg) {
@@ -789,6 +1051,8 @@
   });
 
   document.body.addEventListener("input", (e) => {
+    if (document.visibilityState === "hidden") return;
+    if (recoverIfNeeded()) return;
     const t = e.target;
     if (isMoney(t)) groupLive(t);
     if (t.matches && t.matches("[data-id]")) {
@@ -807,7 +1071,9 @@
 
   document.body.addEventListener("focusin", (e) => {
     const t = e.target;
-    if (!t.matches || !t.matches("input")) return;
+    if (!t.matches || !t.matches("input, textarea, select")) return;
+    if (recoverIfNeeded() && !t.isConnected) return;
+    if (!t.matches("input")) return;
     document.body.classList.add("kb");
     if (isMoney(t)) {
       const next = toEditing(t.value);
@@ -824,7 +1090,10 @@
     const t = e.target;
     if (isMoney(t) && String(t.value).trim() !== "") {
       const shown = parseMoney(t.value);
-      if (shown != null) t.value = formatInput(shown);
+      if (shown != null) {
+        t.value = formatInput(shown);
+        t.defaultValue = t.value;
+      }
     }
     if (t.matches && t.matches("[data-id]")) {
       if (t.value.trim() === "") delete overrides[t.dataset.id];
@@ -846,7 +1115,7 @@
       if (!a || !a.matches || !a.matches("input, textarea, select")) document.body.classList.remove("kb");
       if (window.scrollX) window.scrollTo(0, window.scrollY);
     }, 40);
-    recalc();
+    if (document.visibilityState !== "hidden") recalc();
   });
 
   document.querySelectorAll('input[name="party"]').forEach((el) => {
@@ -876,6 +1145,8 @@
   });
 
   function resetAll() {
+    human = false;
+    clearStored();
     Object.keys(overrides).forEach((key) => delete overrides[key]);
     loanTouched = false;
     document.querySelector('input[name="party"][value="vendor"]').checked = true;
@@ -901,10 +1172,12 @@
   $("closeRates").addEventListener("click", () => $("rates").close());
 
   $("saveBtn").addEventListener("click", () => {
+    beginHandoff();
     downloadNow(pdfFile());
   });
 
   $("shareBtn").addEventListener("click", async () => {
+    beginHandoff();
     const file = pdfFile();
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -927,8 +1200,22 @@
   });
 
   resetAll();
+  persistReady = true;
+  window.addEventListener("pagehide", persistLast);
+  window.addEventListener("pageshow", watchReturn);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") persistLast();
+    else watchReturn();
+  });
+  document.addEventListener("keydown", () => { human = true; }, true);
+  document.addEventListener("pointerdown", () => {
+    const data = readSnapshot();
+    if (!data || !snapDiffers(data)) human = true;
+  }, true);
 
   if (location.hash === "#selftest") {
+    clearStored();
+    resetAll();
     const q = FeeCalc.quote({ party: "vendor", persons: 1, discountPct: 0, sst: false });
     const emptyOk = price.value === "";
     const grandOk = $("grand").textContent === "RM 2,290.00";
@@ -966,9 +1253,64 @@
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const expectedName = "Quotation - " + String(today.getDate()).padStart(2, "0") + " " + months[today.getMonth()] + " " + today.getFullYear() + ".pdf";
     const nameOk = fileName() === expectedName && pdfFile().name === expectedName;
-    document.title = emptyOk && grandOk && feeOk && rows === 15 && q.price == null && q.grandInc === 2290 && groupOk && nameOk
+
+    function wipeLikeIOS() {
+      document.querySelectorAll("input, textarea, select").forEach((el) => {
+        if (el.type === "radio") el.checked = el.value === "vendor";
+        else if (el.type === "checkbox") el.checked = false;
+        else if (el.tagName === "SELECT") el.selectedIndex = 0;
+        else el.value = "";
+      });
+    }
+
+    resetAll();
+    document.querySelector('input[name="party"][value="purchaser"]').checked = true;
+    document.querySelector('input[name="party"][value="purchaser"]').dispatchEvent(new Event("change", { bubbles: true }));
+    typeInto(price, "500000");
+    price.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    sst.checked = true;
+    sst.dispatchEvent(new Event("change", { bubbles: true }));
+    loanOn.checked = true;
+    loanOn.dispatchEvent(new Event("change", { bubbles: true }));
+    typeInto(loanAmount, "200000");
+    loanAmount.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    clientName.value = "Aina";
+    clientName.dispatchEvent(new Event("input", { bubbles: true }));
+    property.value = "Lot 12";
+    property.dispatchEvent(new Event("input", { bubbles: true }));
+    discount.value = "10";
+    discount.dispatchEvent(new Event("change", { bubbles: true }));
+    const beforePrice = price.value;
+    const beforeLoan = loanAmount.value;
+    const beforeGrand = $("grand").textContent;
+    const shaped = beforePrice === "500,000.00" && beforeLoan === "200,000.00" && beforeGrand !== "RM 2,290.00" && $("buyerBlock").hidden === false;
+    wipeLikeIOS();
+    const wiped = price.value === "" && loanAmount.value === "" && clientName.value === "" && !sst.checked && party() === "vendor" && $("grand").textContent === beforeGrand;
+    restoreSnapshot();
+    const restored = price.value === beforePrice && loanAmount.value === beforeLoan && $("grand").textContent === beforeGrand && clientName.value === "Aina" && property.value === "Lot 12" && sst.checked && loanOn.checked && party() === "purchaser" && discount.value === "10" && persons.value === "1" && $("buyerBlock").hidden === false;
+
+    resetAll();
+    typeInto(price, "500000");
+    price.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    const vendorGrand = $("grand").textContent === "RM 8,540.00" && price.value === "500,000.00";
+    wipeLikeIOS();
+    const vendorWiped = price.value === "" && $("grand").textContent === "RM 8,540.00";
+    restoreSnapshot();
+    const vendorBack = price.value === "500,000.00" && $("grand").textContent === "RM 8,540.00";
+
+    $("resetBtn").click();
+    const resetOk = price.value === "" && party() === "vendor" && $("grand").textContent === "RM 2,290.00" && !sst.checked;
+    restoreSnapshot();
+    const resetSticks = price.value === "" && $("grand").textContent === "RM 2,290.00" && party() === "vendor";
+    const keepOk = shaped && wiped && restored && vendorGrand && vendorWiped && vendorBack && resetOk && resetSticks;
+
+    document.title = emptyOk && grandOk && feeOk && rows === 15 && q.price == null && q.grandInc === 2290 && groupOk && nameOk && keepOk
       ? "SELFTEST PASS " + fileName()
-      : "SELFTEST FAIL live=" + liveValue + " blur=" + blurValue + " spa=" + spaValue + " back=" + backValue + " rows=" + rows + " name=" + fileName();
+      : "SELFTEST FAIL live=" + liveValue + " blur=" + blurValue + " spa=" + spaValue + " back=" + backValue + " rows=" + rows + " name=" + fileName()
+        + " keep=" + [shaped, wiped, restored, vendorGrand, vendorWiped, vendorBack, resetOk, resetSticks].join("/")
+        + " price=" + price.value + " grand=" + $("grand").textContent;
+  } else {
+    restoreSnapshot();
   }
 })();
 </script>
